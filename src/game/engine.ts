@@ -1,15 +1,22 @@
-import { basketPixelWidth, drawScene } from "@/game/draw";
+import { basketPixelWidth, basketPose, drawScene, fruitRadius, type FruitDraw, type FruitKind } from "@/game/draw";
 
 const MAX_SPEED = 0.92;
 const KEY_RESPONSE = 14;
 const POINTER_RESPONSE = 16;
 const GAME_KEYS = new Set(["ArrowLeft", "ArrowRight", "KeyA", "KeyD"]);
+const GRAVITY = 340;
+const FRUIT_KINDS: FruitKind[] = ["apple", "banana", "orange", "strawberry"];
+
+type Fruit = FruitDraw & { vy: number; spin: number };
 
 export type ControlsProbe = {
   getX: () => number;
   getYaw: () => number;
   getSpeed: () => number;
+  getScore: () => number;
+  getFruits: () => { kind: FruitKind; x: number; y: number }[];
   setKeys: (codes: string[]) => void;
+  setBasketX: (x: number) => void;
 };
 
 declare global {
@@ -20,6 +27,21 @@ declare global {
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+function fruitCaught(
+  fruit: Fruit,
+  prevY: number,
+  pose: { mouthX: number; mouthY: number; mouthRx: number; mouthRy: number },
+) {
+  const dx = Math.abs(fruit.x - pose.mouthX);
+  const extra = fruit.kind === "banana" ? fruit.r * 0.9 : fruit.r * 0.25;
+  if (dx > pose.mouthRx + extra) return false;
+  const top = pose.mouthY - pose.mouthRy;
+  const bottom = pose.mouthY + pose.mouthRy;
+  if (fruit.y + fruit.r < top) return false;
+  if (prevY - fruit.r > bottom) return false;
+  return fruit.y + fruit.r >= top && prevY - fruit.r <= bottom;
 }
 
 function radialX(x: number, y: number, deadzone = 0.18) {
@@ -34,9 +56,14 @@ export function mountGame(
   hooks: {
     getTouchDir: () => number;
     onPlayingChange: (playing: boolean) => void;
+    onScore: (score: number) => void;
   },
 ) {
   const keys = new Set<string>();
+  const fruits: Fruit[] = [];
+  let score = 0;
+  let spawnIn = 0.35;
+  let kindBag: FruitKind[] = [];
   const state = {
     playing: false,
     basketX: 0.5,
@@ -105,6 +132,62 @@ export function mountGame(
 
     const edge = margin();
     state.basketX = clamp(state.basketX, edge, 1 - edge);
+    stepFruits(dt);
+  }
+
+  function stepFruits(dt: number) {
+    if (!state.playing) return;
+    spawnIn -= dt;
+    if (spawnIn <= 0) {
+      spawnFruit();
+      spawnIn = 0.8 + Math.random() * 0.45;
+    }
+
+    const pose = basketPose(view.w, view.h, state.basketX, state.vx, state.time, state.reducedMotion);
+    let scored = false;
+    for (let i = fruits.length - 1; i >= 0; i--) {
+      const fruit = fruits[i];
+      const prevY = fruit.y;
+      fruit.vy += GRAVITY * dt;
+      fruit.y += fruit.vy * dt;
+      if (!state.reducedMotion) fruit.rot += fruit.spin * dt;
+      if (fruitCaught(fruit, prevY, pose)) {
+        fruits.splice(i, 1);
+        score += 10;
+        scored = true;
+        continue;
+      }
+      if (fruit.y - fruit.r > view.h + 40) fruits.splice(i, 1);
+    }
+    if (scored) hooks.onScore(score);
+  }
+
+  function nextKind() {
+    if (kindBag.length === 0) {
+      kindBag = [...FRUIT_KINDS];
+      for (let i = kindBag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const swap = kindBag[i];
+        kindBag[i] = kindBag[j];
+        kindBag[j] = swap;
+      }
+    }
+    return kindBag.pop() ?? "apple";
+  }
+
+  function spawnFruit() {
+    const r = fruitRadius(view.w, view.h);
+    const kind = nextKind();
+    const pad = r * (kind === "banana" ? 1.3 : 1);
+    fruits.push({
+      kind,
+      x: pad + Math.random() * Math.max(1, view.w - pad * 2),
+      y: -r * 1.4,
+      r,
+      rot: (Math.random() - 0.5) * 0.4,
+      spin: (Math.random() - 0.5) * 1.4,
+      vy: 28 + Math.random() * 36,
+    });
   }
 
   function frame(now: number) {
@@ -114,7 +197,7 @@ export function mountGame(
     const ctx = canvas.getContext("2d");
     if (ctx) {
       ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
-      drawScene(ctx, view.w, view.h, state);
+      drawScene(ctx, view.w, view.h, { ...state, fruits });
     }
     raf = requestAnimationFrame(frame);
   }
@@ -172,9 +255,16 @@ export function mountGame(
     getX: () => state.basketX,
     getYaw: () => 0,
     getSpeed: () => Math.abs(state.vx),
+    getScore: () => score,
+    getFruits: () => fruits.map((fruit) => ({ kind: fruit.kind, x: fruit.x / view.w, y: fruit.y / view.h })),
     setKeys: (codes) => {
       keys.clear();
       for (const code of codes) keys.add(code);
+    },
+    setBasketX: (x) => {
+      const edge = margin();
+      state.basketX = clamp(x, edge, 1 - edge);
+      state.vx = 0;
     },
   };
   window.__controlsTest = probe;

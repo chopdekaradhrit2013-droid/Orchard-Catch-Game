@@ -7,6 +7,7 @@ export function CatchGame() {
   const touchDir = useRef(0);
   const apiRef = useRef<{ start: () => void } | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [score, setScore] = useState(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -14,6 +15,7 @@ export function CatchGame() {
     const api = mountGame(canvas, {
       getTouchDir: () => touchDir.current,
       onPlayingChange: setPlaying,
+      onScore: setScore,
     });
     apiRef.current = api;
     return () => {
@@ -54,7 +56,9 @@ export function CatchGame() {
           aria-live="polite"
         >
           <span className="text-sm font-medium">Score</span>
-          <span className="font-display text-3xl leading-none font-semibold tabular-nums">0</span>
+          <span id="score-value" className="font-display text-3xl leading-none font-semibold tabular-nums">
+            {score}
+          </span>
         </div>
       </header>
 
