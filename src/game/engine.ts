@@ -12,9 +12,37 @@ const MAX_SPEED = 0.92;
 const KEY_RESPONSE = 14;
 const POINTER_RESPONSE = 16;
 const GAME_KEYS = new Set(["ArrowLeft", "ArrowRight", "KeyA", "KeyD"]);
-const GRAVITY = 340;
 const FRUIT_KINDS: FruitKind[] = ["apple", "banana", "orange", "strawberry"];
 const START_LIVES = 3;
+const GRAVITY_BASE = 340;
+const GRAVITY_CAP = 900;
+
+export type Pace = {
+  level: number;
+  pressure: number;
+  gravity: number;
+  spawnLow: number;
+  spawnHigh: number;
+  bombs: number;
+  rocks: number;
+};
+
+export function paceFor(peak: number): Pace {
+  const safe = Math.max(0, peak);
+  const pressure = clamp(safe / 600, 0, 1);
+  const level = 1 + Math.floor(safe / 100);
+  const extra = Math.min(4, level - 1);
+  const spawnLow = 0.8 - pressure * 0.34;
+  return {
+    level,
+    pressure,
+    gravity: GRAVITY_BASE + (GRAVITY_CAP - GRAVITY_BASE) * pressure,
+    spawnLow,
+    spawnHigh: spawnLow + (0.45 - pressure * 0.23),
+    bombs: 1 + Math.floor(extra / 2),
+    rocks: 1 + Math.ceil(extra / 2),
+  };
+}
 
 type Fruit = FruitDraw & { vy: number; spin: number };
 
@@ -25,6 +53,9 @@ export type ControlsProbe = {
   getScore: () => number;
   getLives: () => number;
   getOver: () => boolean;
+  getLevel: () => number;
+  getGravity: () => number;
+  getPace: () => Pace;
   getFruits: () => { kind: DropKind; x: number; y: number }[];
   setKeys: (codes: string[]) => void;
   setBasketX: (x: number) => void;
@@ -72,11 +103,13 @@ export function mountGame(
     onScore: (score: number) => void;
     onLives: (lives: number) => void;
     onOver: (over: boolean) => void;
+    onMilestone: (level: number) => void;
   },
 ) {
   const keys = new Set<string>();
   const fruits: Fruit[] = [];
   let score = 0;
+  let peak = 0;
   let lives = START_LIVES;
   let over = false;
   let spawnIn = 0.35;
@@ -158,7 +191,8 @@ export function mountGame(
     spawnIn -= dt;
     if (spawnIn <= 0) {
       if (autoSpawn) spawnFruit();
-      spawnIn = 0.8 + Math.random() * 0.45;
+      const pace = paceFor(peak);
+      spawnIn = pace.spawnLow + Math.random() * (pace.spawnHigh - pace.spawnLow);
     }
 
     const pose = basketPose(view.w, view.h, state.basketX, state.vx, state.time, state.reducedMotion);
@@ -166,7 +200,7 @@ export function mountGame(
     for (let i = fruits.length - 1; i >= 0; i--) {
       const fruit = fruits[i];
       const prevY = fruit.y;
-      fruit.vy += GRAVITY * dt;
+      fruit.vy += paceFor(peak).gravity * dt;
       fruit.y += fruit.vy * dt;
       if (!state.reducedMotion) fruit.rot += fruit.spin * dt;
       if (fruitCaught(fruit, prevY, pose)) {
@@ -193,6 +227,13 @@ export function mountGame(
       return;
     }
     score += 10;
+    const before = paceFor(peak).level;
+    if (score > peak) peak = score;
+    const after = paceFor(peak).level;
+    if (after > before) {
+      kindBag = [];
+      hooks.onMilestone(after);
+    }
   }
 
   function endRound() {
@@ -207,7 +248,10 @@ export function mountGame(
 
   function nextKind(): DropKind {
     if (kindBag.length === 0) {
-      kindBag = [...FRUIT_KINDS, "bomb", "rock"];
+      const pace = paceFor(peak);
+      kindBag = [...FRUIT_KINDS];
+      for (let i = 0; i < pace.bombs; i++) kindBag.push("bomb");
+      for (let i = 0; i < pace.rocks; i++) kindBag.push("rock");
       for (let i = kindBag.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         const swap = kindBag[i];
@@ -229,7 +273,7 @@ export function mountGame(
       r,
       rot: (Math.random() - 0.5) * 0.4,
       spin: (Math.random() - 0.5) * 1.4,
-      vy: 28 + Math.random() * 36,
+      vy: (28 + Math.random() * 36) * (1 + paceFor(peak).pressure * 0.7),
     });
   }
 
@@ -296,6 +340,7 @@ export function mountGame(
 
   function restart() {
     score = 0;
+    peak = 0;
     lives = START_LIVES;
     over = false;
     spawnIn = 0.35;
@@ -309,6 +354,7 @@ export function mountGame(
     hooks.onScore(0);
     hooks.onLives(START_LIVES);
     hooks.onOver(false);
+    hooks.onMilestone(0);
     hooks.onPlayingChange(true);
   }
 
@@ -332,6 +378,9 @@ export function mountGame(
     getScore: () => score,
     getLives: () => lives,
     getOver: () => over,
+    getLevel: () => paceFor(peak).level,
+    getGravity: () => paceFor(peak).gravity,
+    getPace: () => paceFor(peak),
     getFruits: () => fruits.map((fruit) => ({ kind: fruit.kind, x: fruit.x / view.w, y: fruit.y / view.h })),
     setKeys: (codes) => {
       keys.clear();

@@ -10,6 +10,7 @@ export function CatchGame() {
   const [over, setOver] = useState(false);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
+  const [levelNote, setLevelNote] = useState(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -20,6 +21,7 @@ export function CatchGame() {
       onScore: setScore,
       onLives: setLives,
       onOver: setOver,
+      onMilestone: setLevelNote,
     });
     apiRef.current = api;
     return () => {
@@ -27,6 +29,12 @@ export function CatchGame() {
       apiRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (levelNote < 2) return;
+    const id = window.setTimeout(() => setLevelNote(0), 1700);
+    return () => window.clearTimeout(id);
+  }, [levelNote]);
 
   function hold(dir: -1 | 1) {
     return {
@@ -80,6 +88,16 @@ export function CatchGame() {
           </span>
         </div>
       </header>
+
+      {playing && levelNote > 1 && (
+        <p
+          id="level-note"
+          role="status"
+          className="pointer-events-none absolute top-20 left-1/2 z-20 -translate-x-1/2 rounded-full bg-cream/95 px-4 py-2 text-sm font-semibold text-ink shadow-md"
+        >
+          Level {levelNote}
+        </p>
+      )}
 
       {!playing && !over && (
         <div className="absolute inset-0 z-30 flex items-start justify-center px-4 pt-28 sm:pt-32">
