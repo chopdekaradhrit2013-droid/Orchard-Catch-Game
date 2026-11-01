@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ArrowLeft, ArrowRight, Leaf, Play } from "lucide-react";
+import { ArrowLeft, ArrowRight, Heart, Leaf, Play, RotateCcw } from "lucide-react";
 import { mountGame } from "@/game/engine";
 
 export function CatchGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const touchDir = useRef(0);
-  const apiRef = useRef<{ start: () => void } | null>(null);
+  const apiRef = useRef<{ start: () => void; restart: () => void } | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [over, setOver] = useState(false);
   const [score, setScore] = useState(0);
+  const [lives, setLives] = useState(3);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -16,6 +18,8 @@ export function CatchGame() {
       getTouchDir: () => touchDir.current,
       onPlayingChange: setPlaying,
       onScore: setScore,
+      onLives: setLives,
+      onOver: setOver,
     });
     apiRef.current = api;
     return () => {
@@ -49,10 +53,25 @@ export function CatchGame() {
       <header className="safe-top pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 px-3">
         <div className="flex min-w-0 items-center gap-2 rounded-full bg-cream/95 px-3 py-2 text-ink shadow-md">
           <Leaf className="size-5 shrink-0 text-leaf" aria-hidden="true" />
-          <span className="font-display truncate text-base font-semibold sm:text-lg">Orchard Catch</span>
+          <span className="font-display hidden truncate text-base font-semibold sm:inline sm:text-lg">Orchard Catch</span>
         </div>
         <div
-          className="flex items-baseline gap-2 rounded-full bg-cream/95 px-4 py-2 text-ink shadow-md"
+          id="lives"
+          className="flex shrink-0 items-center gap-1 rounded-full bg-cream/95 px-3 py-2 text-ink shadow-md"
+          aria-label={`${lives} lives left`}
+        >
+          <span className="sr-only">{lives} lives left</span>
+          {[0, 1, 2].map((slot) => (
+            <Heart
+              key={slot}
+              className={slot < lives ? "size-5 text-[#d64545]" : "size-5 text-ink/25"}
+              fill={slot < lives ? "currentColor" : "none"}
+              aria-hidden="true"
+            />
+          ))}
+        </div>
+        <div
+          className="flex shrink-0 items-baseline gap-2 rounded-full bg-cream/95 px-4 py-2 text-ink shadow-md"
           aria-live="polite"
         >
           <span className="text-sm font-medium">Score</span>
@@ -62,7 +81,7 @@ export function CatchGame() {
         </div>
       </header>
 
-      {!playing && (
+      {!playing && !over && (
         <div className="absolute inset-0 z-30 flex items-start justify-center px-4 pt-28 sm:pt-32">
           <div className="w-full max-w-sm rounded-3xl bg-cream/95 px-6 py-7 text-center text-ink shadow-xl ring-1 ring-ink/10">
             <p className="text-sm font-semibold tracking-wide text-leaf">Sunny meadow</p>
@@ -86,7 +105,29 @@ export function CatchGame() {
         </div>
       )}
 
-      {playing && (
+      {over && (
+        <div className="absolute inset-0 z-30 flex items-start justify-center px-4 pt-28 sm:pt-32">
+          <div className="w-full max-w-sm rounded-3xl bg-cream/95 px-6 py-7 text-center text-ink shadow-xl ring-1 ring-ink/10">
+            <p className="text-sm font-semibold tracking-wide text-leaf">Round over</p>
+            <h1 className="font-display mt-1 text-4xl leading-tight font-semibold">Game over</h1>
+            <p className="mt-3 text-sm font-medium text-ink/70">Final score</p>
+            <p id="final-score" className="font-display text-6xl leading-none font-semibold tabular-nums">
+              {score}
+            </p>
+            <button
+              id="restart-game"
+              type="button"
+              className="motion-safe mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-citrus text-base font-semibold text-ink shadow-md transition hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink active:translate-y-px"
+              onClick={() => apiRef.current?.restart()}
+            >
+              <RotateCcw className="size-5" aria-hidden="true" />
+              Restart
+            </button>
+          </div>
+        </div>
+      )}
+
+      {playing && !over && (
         <div className="pointer-events-none absolute inset-0 z-30">
           <button
             type="button"

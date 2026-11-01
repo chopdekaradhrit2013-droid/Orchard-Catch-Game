@@ -1,7 +1,9 @@
 export type FruitKind = "apple" | "banana" | "orange" | "strawberry";
+export type HazardKind = "bomb" | "rock";
+export type DropKind = FruitKind | HazardKind;
 
 export type FruitDraw = {
-  kind: FruitKind;
+  kind: DropKind;
   x: number;
   y: number;
   r: number;
@@ -178,7 +180,9 @@ function drawFruit(ctx: CanvasRenderingContext2D, fruit: FruitDraw) {
   if (fruit.kind === "apple") drawApple(ctx, fruit.r);
   else if (fruit.kind === "banana") drawBanana(ctx, fruit.r);
   else if (fruit.kind === "orange") drawOrange(ctx, fruit.r);
-  else drawStrawberry(ctx, fruit.r);
+  else if (fruit.kind === "strawberry") drawStrawberry(ctx, fruit.r);
+  else if (fruit.kind === "bomb") drawBomb(ctx, fruit.r);
+  else drawRock(ctx, fruit.r);
   ctx.restore();
 }
 
@@ -271,6 +275,60 @@ function drawStrawberry(ctx: CanvasRenderingContext2D, r: number) {
   ctx.ellipse(-r * 0.22, -r * 0.78, r * 0.28, r * 0.14, -0.5, 0, Math.PI * 2);
   ctx.ellipse(r * 0.2, -r * 0.8, r * 0.26, r * 0.13, 0.45, 0, Math.PI * 2);
   ctx.ellipse(0, -r * 0.95, r * 0.16, r * 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawBomb(ctx: CanvasRenderingContext2D, r: number) {
+  ctx.fillStyle = "#2c2824";
+  ctx.beginPath();
+  ctx.arc(0, r * 0.1, r * 0.9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255, 246, 234, 0.28)";
+  ctx.beginPath();
+  ctx.ellipse(-r * 0.28, -r * 0.16, r * 0.2, r * 0.1, -0.7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = WOOD_DARK;
+  ctx.lineWidth = Math.max(2.5, r * 0.12);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(r * 0.2, -r * 0.62);
+  ctx.quadraticCurveTo(r * 0.62, -r * 1.05, r * 0.32, -r * 1.38);
+  ctx.stroke();
+  ctx.fillStyle = SUN;
+  ctx.beginPath();
+  ctx.arc(r * 0.32, -r * 1.42, r * 0.18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = CITRUS;
+  ctx.beginPath();
+  ctx.arc(r * 0.32, -r * 1.42, r * 0.08, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawRock(ctx: CanvasRenderingContext2D, r: number) {
+  ctx.fillStyle = "#6e6a64";
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.15, -r * 0.98);
+  ctx.lineTo(r * 0.72, -r * 0.42);
+  ctx.lineTo(r * 0.98, r * 0.28);
+  ctx.lineTo(r * 0.2, r);
+  ctx.lineTo(-r * 0.82, r * 0.48);
+  ctx.lineTo(-r, -r * 0.22);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#a39e96";
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.1, -r * 0.62);
+  ctx.lineTo(r * 0.42, -r * 0.22);
+  ctx.lineTo(r * 0.08, r * 0.18);
+  ctx.lineTo(-r * 0.5, -r * 0.02);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#4e4b47";
+  ctx.beginPath();
+  ctx.moveTo(r * 0.15, r * 0.15);
+  ctx.lineTo(r * 0.7, r * 0.05);
+  ctx.lineTo(r * 0.35, r * 0.62);
+  ctx.closePath();
   ctx.fill();
 }
 

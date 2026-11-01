@@ -1,4 +1,12 @@
-import { basketPixelWidth, basketPose, drawScene, fruitRadius, type FruitDraw, type FruitKind } from "@/game/draw";
+import {
+  basketPixelWidth,
+  basketPose,
+  drawScene,
+  fruitRadius,
+  type DropKind,
+  type FruitDraw,
+  type FruitKind,
+} from "@/game/draw";
 
 const MAX_SPEED = 0.92;
 const KEY_RESPONSE = 14;
@@ -6,6 +14,7 @@ const POINTER_RESPONSE = 16;
 const GAME_KEYS = new Set(["ArrowLeft", "ArrowRight", "KeyA", "KeyD"]);
 const GRAVITY = 340;
 const FRUIT_KINDS: FruitKind[] = ["apple", "banana", "orange", "strawberry"];
+const START_LIVES = 3;
 
 type Fruit = FruitDraw & { vy: number; spin: number };
 
@@ -14,9 +23,13 @@ export type ControlsProbe = {
   getYaw: () => number;
   getSpeed: () => number;
   getScore: () => number;
-  getFruits: () => { kind: FruitKind; x: number; y: number }[];
+  getLives: () => number;
+  getOver: () => boolean;
+  getFruits: () => { kind: DropKind; x: number; y: number }[];
   setKeys: (codes: string[]) => void;
   setBasketX: (x: number) => void;
+  setAutoSpawn: (on: boolean) => void;
+  forceDrop: (kind: DropKind, x?: number) => void;
 };
 
 declare global {
@@ -57,13 +70,18 @@ export function mountGame(
     getTouchDir: () => number;
     onPlayingChange: (playing: boolean) => void;
     onScore: (score: number) => void;
+    onLives: (lives: number) => void;
+    onOver: (over: boolean) => void;
   },
 ) {
   const keys = new Set<string>();
   const fruits: Fruit[] = [];
   let score = 0;
+  let lives = START_LIVES;
+  let over = false;
   let spawnIn = 0.35;
-  let kindBag: FruitKind[] = [];
+  let autoSpawn = true;
+  let kindBag: DropKind[] = [];
   const state = {
     playing: false,
     basketX: 0.5,
@@ -139,12 +157,12 @@ export function mountGame(
     if (!state.playing) return;
     spawnIn -= dt;
     if (spawnIn <= 0) {
-      spawnFruit();
+      if (autoSpawn) spawnFruit();
       spawnIn = 0.8 + Math.random() * 0.45;
     }
 
     const pose = basketPose(view.w, view.h, state.basketX, state.vx, state.time, state.reducedMotion);
-    let scored = false;
+    let dirty = false;
     for (let i = fruits.length - 1; i >= 0; i--) {
       const fruit = fruits[i];
       const prevY = fruit.y;
@@ -153,18 +171,43 @@ export function mountGame(
       if (!state.reducedMotion) fruit.rot += fruit.spin * dt;
       if (fruitCaught(fruit, prevY, pose)) {
         fruits.splice(i, 1);
-        score += 10;
-        scored = true;
+        applyCatch(fruit.kind);
+        dirty = true;
+        if (!state.playing) break;
         continue;
       }
       if (fruit.y - fruit.r > view.h + 40) fruits.splice(i, 1);
     }
-    if (scored) hooks.onScore(score);
+    if (dirty) hooks.onScore(score);
   }
 
-  function nextKind() {
+  function applyCatch(kind: DropKind) {
+    if (kind === "bomb") {
+      score -= 20;
+      return;
+    }
+    if (kind === "rock") {
+      lives -= 1;
+      hooks.onLives(lives);
+      if (lives <= 0) endRound();
+      return;
+    }
+    score += 10;
+  }
+
+  function endRound() {
+    state.playing = false;
+    state.pointerX = null;
+    state.vx = 0;
+    over = true;
+    fruits.length = 0;
+    hooks.onPlayingChange(false);
+    hooks.onOver(true);
+  }
+
+  function nextKind(): DropKind {
     if (kindBag.length === 0) {
-      kindBag = [...FRUIT_KINDS];
+      kindBag = [...FRUIT_KINDS, "bomb", "rock"];
       for (let i = kindBag.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         const swap = kindBag[i];
@@ -246,9 +289,40 @@ export function mountGame(
   }
 
   function start() {
-    if (state.playing) return;
+    if (state.playing || over) return;
     state.playing = true;
     hooks.onPlayingChange(true);
+  }
+
+  function restart() {
+    score = 0;
+    lives = START_LIVES;
+    over = false;
+    spawnIn = 0.35;
+    autoSpawn = true;
+    kindBag = [];
+    fruits.length = 0;
+    state.playing = true;
+    state.basketX = 0.5;
+    state.vx = 0;
+    state.pointerX = null;
+    hooks.onScore(0);
+    hooks.onLives(START_LIVES);
+    hooks.onOver(false);
+    hooks.onPlayingChange(true);
+  }
+
+  function dropAt(kind: DropKind, x: number) {
+    const r = fruitRadius(view.w, view.h);
+    fruits.push({
+      kind,
+      x,
+      y: -r * 1.4,
+      r,
+      rot: 0,
+      spin: kind === "rock" ? 0.6 : 0.2,
+      vy: 40,
+    });
   }
 
   const probe: ControlsProbe = {
@@ -256,6 +330,8 @@ export function mountGame(
     getYaw: () => 0,
     getSpeed: () => Math.abs(state.vx),
     getScore: () => score,
+    getLives: () => lives,
+    getOver: () => over,
     getFruits: () => fruits.map((fruit) => ({ kind: fruit.kind, x: fruit.x / view.w, y: fruit.y / view.h })),
     setKeys: (codes) => {
       keys.clear();
@@ -265,6 +341,15 @@ export function mountGame(
       const edge = margin();
       state.basketX = clamp(x, edge, 1 - edge);
       state.vx = 0;
+    },
+    forceDrop: (kind, x = 0.5) => {
+      const edge = fruitRadius(view.w, view.h);
+      dropAt(kind, clamp(x, 0, 1) * view.w);
+      const last = fruits[fruits.length - 1];
+      if (last) last.x = clamp(last.x, edge, view.w - edge);
+    },
+    setAutoSpawn: (on) => {
+      autoSpawn = on;
     },
   };
   window.__controlsTest = probe;
@@ -286,6 +371,7 @@ export function mountGame(
 
   return {
     start,
+    restart,
     destroy() {
       cancelAnimationFrame(raf);
       observer.disconnect();
